@@ -90,6 +90,20 @@ function buildConfigReadResult() {
         config: { model_provider: "ollama" },
         origins: {}
       };
+    case "proxy-provider":
+      return {
+        config: {
+          model_provider: "proxy",
+          model_providers: {
+            proxy: {
+              name: "Proxy",
+              base_url: process.env.FAKE_CODEX_PROXY_BASE_URL || "",
+              requires_openai_auth: false
+            }
+          }
+        },
+        origins: {}
+      };
     case "env-key-provider":
       return {
         config: {

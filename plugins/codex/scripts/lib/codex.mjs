@@ -50,6 +50,7 @@ const DEFAULT_CONTINUE_PROMPT =
   "Continue from the current thread state. Pick the next highest-value step and follow through until the task is resolved.";
 const EXTERNAL_AGENT_IMPORT_COMPLETED = "externalAgentConfig/import/completed";
 const EXTERNAL_AGENT_IMPORT_TIMEOUT_MS = 2 * 60 * 1000;
+const MODEL_LIST_TIMEOUT_MS = 5000;
 
 function cleanCodexStderr(stderr) {
   return stderr
@@ -867,6 +868,67 @@ function buildAppServerAuthStatus(accountResponse, configResponse) {
   });
 }
 
+/**
+ * Reads the model ids a provider advertises over its OpenAI-compatible `/models` endpoint.
+ * Returns null when the provider answers but offers no usable list, which means "cannot verify".
+ */
+async function fetchProviderModelIds(baseUrl) {
+  const response = await fetch(`${baseUrl.replace(/\/+$/, "")}/models`, {
+    signal: AbortSignal.timeout(MODEL_LIST_TIMEOUT_MS)
+  });
+  if (!response.ok) {
+    return null;
+  }
+  const body = await response.json();
+  const ids = Array.isArray(body?.data)
+    ? body.data.map((entry) => entry?.id).filter((id) => typeof id === "string" && id)
+    : [];
+  return ids.length ? ids : null;
+}
+
+/**
+ * Fails fast when the requested model is not one the configured provider serves.
+ * No provider base_url, or a provider that answers but offers no usable list: skip.
+ * Provider unreachable: fail, because the turn would fail there anyway.
+ */
+async function ensureModelAvailable(client, cwd, model) {
+  if (!model) {
+    return;
+  }
+
+  let baseUrl = null;
+  try {
+    const configResponse = await client.request("config/read", { includeLayers: false, cwd });
+    const { providerConfig } = resolveProviderConfig(configResponse);
+    baseUrl = typeof providerConfig?.base_url === "string" ? providerConfig.base_url.trim() : null;
+  } catch {
+    return;
+  }
+
+  if (!baseUrl) {
+    return;
+  }
+
+  let modelIds;
+  try {
+    modelIds = await fetchProviderModelIds(baseUrl);
+  } catch (error) {
+    throw new Error(
+      `Cannot reach the model provider at ${baseUrl} to verify model "${model}": ${
+        error instanceof Error ? error.message : error
+      }`
+    );
+  }
+
+  if (!modelIds || modelIds.includes(model)) {
+    return;
+  }
+
+  throw new Error(
+    `Unknown model "${model}" for the provider at ${baseUrl}. Available models:\n  ${modelIds.sort().join("\n  ")}`
+  );
+}
+
 async function getCodexAuthStatusFromClient(client, cwd) {
   try {
     const accountResponse = await client.request("account/read", { refreshToken: false });
@@ -1008,6 +1070,7 @@ export async function runAppServerReview(cwd, options = {}) {
   }
 
   return withAppServer(cwd, async (client) => {
+    await ensureModelAvailable(client, cwd, options.model);
     emitProgress(options.onProgress, "Starting Codex review thread.", "starting");
     const thread = await startThread(client, cwd, {
       model: options.model,
@@ -1103,6 +1166,8 @@ export async function runAppServerTurn(cwd, options = {}) {
 
   return withAppServer(cwd, async (client) => {
     let threadId;
+
+    await ensureModelAvailable(client, cwd, options.model);
 
     if (options.resumeThreadId) {
       emitProgress(options.onProgress, `Resuming thread ${options.resumeThreadId}.`, "starting");

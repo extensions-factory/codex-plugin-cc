@@ -924,6 +924,44 @@ test("workers lists the roster and marks the default", () => {
   assert.equal(payload.workers.every((worker) => typeof worker.model === "string" && worker.model.length > 0), true);
 });
 
+function runAsync(command, args, options = {}) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(command, args, { cwd: options.cwd, env: options.env, windowsHide: true });
+    let stdout = "";
+    let stderr = "";
+    child.stdout.on("data", (chunk) => {
+      stdout += chunk;
+    });
+    child.stderr.on("data", (chunk) => {
+      stderr += chunk;
+    });
+    child.on("error", reject);
+    child.on("close", (status) => resolve({ status, stdout, stderr }));
+  });
+}
+
+async function startModelListServer(handler) {
+  const { createServer } = await import("node:http");
+  const server = createServer(handler);
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const { port } = server.address();
+  return {
+    baseUrl: `http://127.0.0.1:${port}/v1`,
+    close: () => new Promise((resolve) => server.close(resolve))
+  };
+}
+
+function serveModelIds(ids) {
+  return (request, response) => {
+    if (!request.url.endsWith("/models")) {
+      response.writeHead(404).end();
+      return;
+    }
+    response.writeHead(200, { "content-type": "application/json" });
+    response.end(JSON.stringify({ object: "list", data: ids.map((id) => ({ id, object: "model" })) }));
+  };
+}
+
 function prepareRepo() {
   const repo = makeTempDir();
   initGitRepo(repo);
@@ -932,6 +970,86 @@ function prepareRepo() {
   run("git", ["commit", "-m", "init"], { cwd: repo });
   return repo;
 }
+
+test("task rejects a model the provider does not serve and lists what it does", async () => {
+  const repo = prepareRepo();
+  const binDir = makeTempDir();
+  installFakeCodex(binDir, "proxy-provider");
+  const server = await startModelListServer(serveModelIds(["cx/real-one", "cx/real-two"]));
+
+  try {
+    const result = await runAsync("node", [SCRIPT, "task", "--model", "cx/not-served", "do something"], {
+      cwd: repo,
+      env: { ...buildEnv(binDir), FAKE_CODEX_PROXY_BASE_URL: server.baseUrl }
+    });
+
+    assert.notEqual(result.status, 0);
+    const output = `${result.stdout}${result.stderr}`;
+    assert.match(output, /Unknown model "cx\/not-served"/);
+    assert.match(output, /cx\/real-one/);
+    assert.match(output, /cx\/real-two/);
+  } finally {
+    await server.close();
+  }
+});
+
+test("task accepts a model the provider serves", async () => {
+  const repo = prepareRepo();
+  const binDir = makeTempDir();
+  const statePath = path.join(binDir, "fake-codex-state.json");
+  installFakeCodex(binDir, "proxy-provider");
+  const server = await startModelListServer(serveModelIds(["cx/real-one"]));
+
+  try {
+    const result = await runAsync("node", [SCRIPT, "task", "--model", "cx/real-one", "do something"], {
+      cwd: repo,
+      env: { ...buildEnv(binDir), FAKE_CODEX_PROXY_BASE_URL: server.baseUrl }
+    });
+
+    assert.equal(result.status, 0, result.stderr);
+    const fakeState = JSON.parse(fs.readFileSync(statePath, "utf8"));
+    assert.equal(fakeState.lastThreadStart.model, "cx/real-one");
+  } finally {
+    await server.close();
+  }
+});
+
+test("task runs when the provider cannot list models", async () => {
+  const repo = prepareRepo();
+  const binDir = makeTempDir();
+  const statePath = path.join(binDir, "fake-codex-state.json");
+  installFakeCodex(binDir, "proxy-provider");
+  const server = await startModelListServer((request, response) => {
+    response.writeHead(404).end();
+  });
+
+  try {
+    const result = await runAsync("node", [SCRIPT, "task", "--model", "cx/unverifiable", "do something"], {
+      cwd: repo,
+      env: { ...buildEnv(binDir), FAKE_CODEX_PROXY_BASE_URL: server.baseUrl }
+    });
+
+    assert.equal(result.status, 0, result.stderr);
+    const fakeState = JSON.parse(fs.readFileSync(statePath, "utf8"));
+    assert.equal(fakeState.lastThreadStart.model, "cx/unverifiable");
+  } finally {
+    await server.close();
+  }
+});
+
+test("task fails clearly when the provider is unreachable", () => {
+  const repo = prepareRepo();
+  const binDir = makeTempDir();
+  installFakeCodex(binDir, "proxy-provider");
+
+  const result = run("node", [SCRIPT, "task", "--model", "cx/whatever", "do something"], {
+    cwd: repo,
+    env: { ...buildEnv(binDir), FAKE_CODEX_PROXY_BASE_URL: "http://127.0.0.1:1/v1" }
+  });
+
+  assert.notEqual(result.status, 0);
+  assert.match(`${result.stdout}${result.stderr}`, /Cannot reach the model provider at http:\/\/127\.0\.0\.1:1\/v1/);
+});
 
 test("task logs reasoning summaries and assistant messages to the job log", () => {
   const repo = makeTempDir();
