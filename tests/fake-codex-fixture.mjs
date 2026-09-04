@@ -73,13 +73,8 @@ function buildAccountReadResult() {
     case "provider-no-auth":
     case "env-key-provider":
       return { account: null, requiresOpenaiAuth: false };
-    case "api-key-account-only":
-      return { account: { type: "apiKey" }, requiresOpenaiAuth: true };
     default:
-      return {
-        account: { type: "chatgpt", email: "test@example.com", planType: "plus" },
-        requiresOpenaiAuth: true
-      };
+      return { account: null, requiresOpenaiAuth: false };
   }
 }
 
@@ -120,7 +115,10 @@ function buildConfigReadResult() {
       };
     default:
       return {
-        config: { model_provider: "openai" },
+        config: {
+          model_provider: "9router",
+          model_providers: { "9router": { name: "9Router", requires_openai_auth: false } }
+        },
         origins: {}
       };
   }
@@ -270,17 +268,6 @@ if (args[0] === "app-server" && args[1] === "--help") {
   console.log("fake app-server help");
   process.exit(0);
 }
-if (args[0] === "login" && args[1] === "status") {
-  if (BEHAVIOR === "logged-out" || BEHAVIOR === "refreshable-auth" || BEHAVIOR === "auth-run-fails" || BEHAVIOR === "provider-no-auth" || BEHAVIOR === "env-key-provider" || BEHAVIOR === "api-key-account-only") {
-    console.error("not authenticated");
-    process.exit(1);
-  }
-  console.log("logged in");
-  process.exit(0);
-}
-if (args[0] === "login") {
-  process.exit(0);
-}
 if (args[0] !== "app-server") {
   process.exit(1);
 }
@@ -321,7 +308,7 @@ rl.on("line", (line) => {
 
       case "thread/start": {
         if (BEHAVIOR === "auth-run-fails") {
-          throw new Error("authentication expired; run codex login");
+          throw new Error("provider rejected the request: credentials expired");
         }
         if (requiresExperimental("persistExtendedHistory", message, state) || requiresExperimental("persistFullHistory", message, state)) {
           throw new Error("thread/start.persistFullHistory requires experimentalApi capability");

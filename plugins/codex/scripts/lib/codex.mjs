@@ -786,8 +786,6 @@ function buildAuthStatus(fields = {}) {
     loggedIn: false,
     detail: "not authenticated",
     source: "unknown",
-    authMethod: null,
-    verified: null,
     requiresOpenaiAuth: null,
     provider: null,
     ...fields
@@ -818,36 +816,10 @@ function resolveProviderConfig(configResponse) {
 }
 
 function buildAppServerAuthStatus(accountResponse, configResponse) {
-  const account = accountResponse?.account ?? null;
   const requiresOpenaiAuth =
     typeof accountResponse?.requiresOpenaiAuth === "boolean" ? accountResponse.requiresOpenaiAuth : null;
   const { providerId, providerConfig } = resolveProviderConfig(configResponse);
   const providerLabel = formatProviderLabel(providerId, providerConfig);
-
-  if (account?.type === "chatgpt") {
-    const email = typeof account.email === "string" && account.email.trim() ? account.email.trim() : null;
-    return buildAuthStatus({
-      loggedIn: true,
-      detail: email ? `ChatGPT login active for ${email}` : "ChatGPT login active",
-      source: "app-server",
-      authMethod: "chatgpt",
-      verified: true,
-      requiresOpenaiAuth,
-      provider: providerId
-    });
-  }
-
-  if (account?.type === "apiKey") {
-    return buildAuthStatus({
-      loggedIn: true,
-      detail: "API key configured (unverified)",
-      source: "app-server",
-      authMethod: "apiKey",
-      verified: false,
-      requiresOpenaiAuth,
-      provider: providerId
-    });
-  }
 
   if (requiresOpenaiAuth === false) {
     return buildAuthStatus({
@@ -861,7 +833,7 @@ function buildAppServerAuthStatus(accountResponse, configResponse) {
 
   return buildAuthStatus({
     loggedIn: false,
-    detail: `${providerLabel} requires OpenAI authentication`,
+    detail: `${providerLabel} requires OpenAI login, which this plugin does not use. Configure a provider with requires_openai_auth = false, such as a local proxy.`,
     source: "app-server",
     requiresOpenaiAuth,
     provider: providerId
@@ -994,8 +966,6 @@ export async function getCodexAuthStatus(cwd, options = {}) {
       loggedIn: false,
       detail: availability.detail,
       source: "availability",
-      authMethod: null,
-      verified: null,
       requiresOpenaiAuth: null,
       provider: null
     };

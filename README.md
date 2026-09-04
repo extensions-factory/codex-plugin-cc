@@ -15,8 +15,7 @@ they already have.
 
 ## Requirements
 
-- **ChatGPT subscription (incl. Free) or OpenAI API key.**
-  - Usage will contribute to your Codex usage limits. [Learn more](https://developers.openai.com/codex/pricing).
+- **Codex CLI pointed at a provider that needs no OpenAI login.** This fork targets a local proxy such as 9router: set `model_provider` and `model_providers.<id>.base_url` in `~/.codex/config.toml`.
 - **Node.js 18.18 or later**
 
 ## Install
@@ -51,12 +50,6 @@ If you prefer to install Codex yourself, use:
 
 ```bash
 npm install -g @openai/codex
-```
-
-If Codex is installed but not logged in yet, run:
-
-```bash
-!codex login
 ```
 
 After install, you should see:
@@ -221,7 +214,7 @@ Examples:
 
 ### `/codex:setup`
 
-Checks whether Codex is installed and authenticated.
+Checks whether Codex is installed and its provider is ready.
 If Codex is missing and npm is available, it can offer to install Codex for you.
 
 You can also use `/codex:setup` to manage the optional review gate.
@@ -295,11 +288,9 @@ This way you can review the Codex work or continue the work there.
 
 ## FAQ
 
-### Do I need a separate Codex account for this plugin?
+### Do I need a Codex account for this plugin?
 
-If you are already signed into Codex on this machine, that account should work immediately here too. This plugin uses your local Codex CLI authentication.
-
-If you only use Claude Code today and have not used Codex yet, you will also need to sign in to Codex with either a ChatGPT account or an API key. [Codex is available with your ChatGPT subscription](https://developers.openai.com/codex/pricing/), and [`codex login`](https://developers.openai.com/codex/cli/reference/#codex-login) supports both ChatGPT and API key sign-in. Run `/codex:setup` to check whether Codex is ready, and use `!codex login` if it is not.
+No. The plugin talks to whatever provider your local Codex CLI is configured for, and this fork expects one that does not require OpenAI login. Run `/codex:setup` to check readiness.
 
 ### Does the plugin use a separate Codex runtime?
 
@@ -308,15 +299,12 @@ No. This plugin delegates through your local [Codex CLI](https://developers.open
 That means:
 
 - it uses the same Codex install you would use directly
-- it uses the same local authentication state
 - it uses the same repository checkout and machine-local environment
 
 ### Will it use the same Codex config I already have?
 
 Yes. If you already use Codex, the plugin picks up the same [configuration](#common-configurations).
 
-### Can I keep using my current API key or base URL setup?
+### Can I keep my current provider setup?
 
-Yes. Because the plugin uses your local Codex CLI, your existing sign-in method and config still apply.
-
-If you need to point the built-in OpenAI provider at a different endpoint, set `openai_base_url` in your [Codex config](https://developers.openai.com/codex/config-advanced/#config-and-state-locations).
+Yes. The plugin reads the same `~/.codex/config.toml` as the Codex CLI. The provider's `base_url` is also where the plugin fetches the list of valid models from.

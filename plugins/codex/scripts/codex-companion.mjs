@@ -208,8 +208,7 @@ async function buildSetupReport(cwd, actionsTaken = []) {
     nextSteps.push("Install Codex with `npm install -g @openai/codex`.");
   }
   if (codexStatus.available && !authStatus.loggedIn && authStatus.requiresOpenaiAuth) {
-    nextSteps.push("Run `!codex login`.");
-    nextSteps.push("If browser login is blocked, retry with `!codex login --device-auth` or `!codex login --with-api-key`.");
+    nextSteps.push("Point Codex at a provider that needs no OpenAI login: set `model_provider` and `model_providers.<id>.base_url` in `~/.codex/config.toml`.");
   }
   if (!config.stopReviewGate) {
     nextSteps.push("Optional: run `/codex:setup --enable-review-gate` to require a fresh review before stop.");
