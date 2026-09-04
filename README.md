@@ -138,8 +138,7 @@ Examples:
 /codex:rescue investigate why the tests started failing
 /codex:rescue fix the failing test with the smallest safe patch
 /codex:rescue --resume apply the top fix from the last run
-/codex:rescue --model gpt-5.4-mini --effort medium investigate the flaky integration test
-/codex:rescue --model spark fix the issue quickly
+/codex:rescue --worker reviewer --effort high investigate the flaky integration test
 /codex:rescue --background investigate the regression
 ```
 
@@ -154,7 +153,7 @@ Ask Codex to redesign the database connection to be more resilient.
 - every Codex run uses a worker: a named profile that supplies the model, the reasoning effort, and the instructions Codex runs under. `node "${CLAUDE_PLUGIN_ROOT}/scripts/codex-companion.mjs" workers` lists them.
 - if you do not pass `--worker`, the default worker applies. `--model` and `--effort` override that worker's values for a single run.
 - a model the configured provider does not serve is rejected before the run starts, and the error lists the models it does serve.
-- if you say `spark`, the plugin maps that to `gpt-5.3-codex-spark`
+- `--effort` applies to `task` and `adversarial-review`; the native `review` runs at Codex's default effort.
 - follow-up rescue requests can continue the latest Codex task in the repo
 
 ### `/codex:transfer`
@@ -265,12 +264,7 @@ The Codex plugin wraps the [Codex app server](https://developers.openai.com/code
 
 ### Common Configurations
 
-If you want to change the default reasoning effort or the default model that gets used by the plugin, you can define that inside your user-level or project-level `config.toml`. For example to always use `gpt-5.4-mini` on `high` for a specific project you can add the following to a `.codex/config.toml` file at the root of the directory you started Claude in:
-
-```toml
-model = "gpt-5.4-mini"
-model_reasoning_effort = "high"
-```
+The plugin always passes the selected worker's model and reasoning effort explicitly, so `model` and `model_reasoning_effort` in `config.toml` do not affect plugin runs. Change the worker roster in `plugins/codex/workers/workers.json` instead. Every other Codex setting still applies.
 
 Your configuration will be picked up based on:
 

@@ -31,8 +31,7 @@ Forwarding rules:
 - Leave `--worker` unset by default. The runtime applies its default worker, which supplies both the model and the worker instructions.
 - Add `--worker <name>` only when the user names a worker or asks for a role the roster covers. Run `node "${CLAUDE_PLUGIN_ROOT}/scripts/codex-companion.mjs" workers` to read the roster only when you actually need to choose one.
 - Leave model unset by default. Only add `--model` when the user explicitly asks for a specific model, which overrides the worker's model.
-- If the user asks for `spark`, map that to `--model gpt-5.3-codex-spark`.
-- If the user asks for a concrete model name such as `gpt-5.4-mini`, pass it through with `--model`.
+- If the user asks for a concrete model name, pass it through with `--model`.
 - Treat `--worker <value>`, `--effort <value>`, and `--model <value>` as runtime controls and do not include them in the task text you pass through.
 - Default to a write-capable Codex run by adding `--write` unless the user explicitly asks for read-only behavior or only wants review, diagnosis, or research without edits.
 - Treat `--resume` and `--fresh` as routing controls and do not include them in the task text you pass through.

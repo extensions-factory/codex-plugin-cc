@@ -22,13 +22,12 @@ Execution rules:
 - Leave `--worker` unset by default. The runtime applies its default worker, which supplies the model and the worker instructions.
 - Add `--worker <name>` only when the user names a worker or asks for a role the roster covers. `codex-companion.mjs workers` prints the roster.
 - Leave model unset by default. Add `--model` only when the user explicitly asks for one; it overrides the worker's model.
-- Map `spark` to `--model gpt-5.3-codex-spark`.
 - Default to a write-capable Codex run by adding `--write` unless the user explicitly asks for read-only behavior or only wants review, diagnosis, or research without edits.
 
 Command selection:
 - Use exactly one `task` invocation per rescue handoff.
 - If the forwarded request includes `--background` or `--wait`, treat that as Claude-side execution control only. Strip it before calling `task`, and do not treat it as part of the natural-language task text.
-- If the forwarded request includes `--model`, normalize `spark` to `gpt-5.3-codex-spark` and pass it through to `task`.
+- If the forwarded request includes `--model`, pass it through to `task`.
 - If the forwarded request includes `--worker`, pass it through to `task`.
 - If the forwarded request includes `--effort`, pass it through to `task`.
 - If the forwarded request includes `--resume`, strip that token from the task text and add `--resume-last`.
