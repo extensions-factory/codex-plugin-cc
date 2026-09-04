@@ -784,6 +784,155 @@ test("task forwards model selection and reasoning effort to app-server turn/star
   assert.equal(fakeState.lastTurnStart.effort, "low");
 });
 
+test("task sends the default worker's model, effort, and instructions", () => {
+  const repo = prepareRepo();
+  const binDir = makeTempDir();
+  const statePath = path.join(binDir, "fake-codex-state.json");
+  installFakeCodex(binDir);
+
+  const result = run("node", [SCRIPT, "task", "diagnose the failing test"], {
+    cwd: repo,
+    env: buildEnv(binDir)
+  });
+
+  assert.equal(result.status, 0, result.stderr);
+  const roster = JSON.parse(fs.readFileSync(path.join(PLUGIN_ROOT, "workers", "workers.json"), "utf8"));
+  const defaultWorker = roster.workers[roster.defaults.task];
+  const instructions = fs
+    .readFileSync(path.join(PLUGIN_ROOT, "workers", defaultWorker.instructionsFile), "utf8")
+    .trim();
+  const fakeState = JSON.parse(fs.readFileSync(statePath, "utf8"));
+
+  assert.equal(fakeState.lastThreadStart.model, defaultWorker.model);
+  assert.equal(fakeState.lastThreadStart.developerInstructions, instructions);
+  assert.equal(fakeState.lastTurnStart.effort, defaultWorker.effort);
+});
+
+test("task sends the named worker's instructions and lets --model override it", () => {
+  const repo = prepareRepo();
+  const binDir = makeTempDir();
+  const statePath = path.join(binDir, "fake-codex-state.json");
+  installFakeCodex(binDir);
+
+  const result = run("node", [SCRIPT, "task", "--worker", "reviewer", "--model", "cx/override", "audit this"], {
+    cwd: repo,
+    env: buildEnv(binDir)
+  });
+
+  assert.equal(result.status, 0, result.stderr);
+  const reviewerInstructions = fs.readFileSync(path.join(PLUGIN_ROOT, "workers", "reviewer.md"), "utf8").trim();
+  const fakeState = JSON.parse(fs.readFileSync(statePath, "utf8"));
+
+  assert.equal(fakeState.lastThreadStart.model, "cx/override");
+  assert.equal(fakeState.lastThreadStart.developerInstructions, reviewerInstructions);
+});
+
+test("task rejects an unknown worker and lists the roster", () => {
+  const repo = makeTempDir();
+  const binDir = makeTempDir();
+  installFakeCodex(binDir);
+  initGitRepo(repo);
+
+  const result = run("node", [SCRIPT, "task", "--worker", "nope", "do something"], {
+    cwd: repo,
+    env: buildEnv(binDir)
+  });
+
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /Unknown worker "nope"/);
+  assert.match(result.stderr, /implementer/);
+});
+
+test("review sends the selected worker's model and instructions", () => {
+  const repo = prepareRepo();
+  const binDir = makeTempDir();
+  const statePath = path.join(binDir, "fake-codex-state.json");
+  installFakeCodex(binDir);
+  fs.writeFileSync(path.join(repo, "README.md"), "hello there\n");
+
+  const result = run("node", [SCRIPT, "review", "--worker", "reviewer"], {
+    cwd: repo,
+    env: buildEnv(binDir)
+  });
+
+  assert.equal(result.status, 0, result.stderr);
+  const roster = JSON.parse(fs.readFileSync(path.join(PLUGIN_ROOT, "workers", "workers.json"), "utf8"));
+  const reviewerInstructions = fs.readFileSync(path.join(PLUGIN_ROOT, "workers", "reviewer.md"), "utf8").trim();
+  const fakeState = JSON.parse(fs.readFileSync(statePath, "utf8"));
+
+  assert.equal(fakeState.lastThreadStart.model, roster.workers.reviewer.model);
+  assert.equal(fakeState.lastThreadStart.developerInstructions, reviewerInstructions);
+});
+
+test("review uses the roster's review default when --worker is absent", () => {
+  const repo = prepareRepo();
+  const binDir = makeTempDir();
+  const statePath = path.join(binDir, "fake-codex-state.json");
+  installFakeCodex(binDir);
+  fs.writeFileSync(path.join(repo, "README.md"), "hello there\n");
+
+  const result = run("node", [SCRIPT, "review"], { cwd: repo, env: buildEnv(binDir) });
+
+  assert.equal(result.status, 0, result.stderr);
+  const roster = JSON.parse(fs.readFileSync(path.join(PLUGIN_ROOT, "workers", "workers.json"), "utf8"));
+  const reviewer = roster.workers[roster.defaults.review];
+  const instructions = fs.readFileSync(path.join(PLUGIN_ROOT, "workers", reviewer.instructionsFile), "utf8").trim();
+  const fakeState = JSON.parse(fs.readFileSync(statePath, "utf8"));
+
+  assert.equal(fakeState.lastThreadStart.model, reviewer.model);
+  assert.equal(fakeState.lastThreadStart.developerInstructions, instructions);
+});
+
+test("task --resume-last keeps the thread's worker unless --worker is passed", () => {
+  const repo = prepareRepo();
+  const binDir = makeTempDir();
+  const statePath = path.join(binDir, "fake-codex-state.json");
+  installFakeCodex(binDir);
+  const env = buildEnv(binDir);
+
+  const first = run("node", [SCRIPT, "task", "initial task"], { cwd: repo, env });
+  assert.equal(first.status, 0, first.stderr);
+
+  const plain = run("node", [SCRIPT, "task", "--resume-last", "follow up"], { cwd: repo, env });
+  assert.equal(plain.status, 0, plain.stderr);
+  let fakeState = JSON.parse(fs.readFileSync(statePath, "utf8"));
+  assert.equal(fakeState.lastThreadResume.model, null);
+  assert.equal(fakeState.lastThreadResume.developerInstructions, null);
+  assert.equal(fakeState.lastTurnStart.effort, null);
+
+  const explicit = run("node", [SCRIPT, "task", "--resume-last", "--worker", "reviewer", "follow up"], { cwd: repo, env });
+  assert.equal(explicit.status, 0, explicit.stderr);
+  fakeState = JSON.parse(fs.readFileSync(statePath, "utf8"));
+  const reviewerInstructions = fs.readFileSync(path.join(PLUGIN_ROOT, "workers", "reviewer.md"), "utf8").trim();
+  assert.equal(fakeState.lastThreadResume.developerInstructions, reviewerInstructions);
+});
+
+test("workers lists the roster and marks the default", () => {
+  const binDir = makeTempDir();
+  installFakeCodex(binDir);
+
+  const result = run("node", [SCRIPT, "workers", "--json"], {
+    cwd: ROOT,
+    env: buildEnv(binDir)
+  });
+
+  assert.equal(result.status, 0, result.stderr);
+  const payload = JSON.parse(result.stdout);
+  assert.ok(payload.workers.length > 0);
+  assert.deepEqual(payload.workers.find((worker) => worker.name === "implementer")?.defaultFor, ["task"]);
+  assert.deepEqual(payload.workers.find((worker) => worker.name === "reviewer")?.defaultFor, ["review"]);
+  assert.equal(payload.workers.every((worker) => typeof worker.model === "string" && worker.model.length > 0), true);
+});
+
+function prepareRepo() {
+  const repo = makeTempDir();
+  initGitRepo(repo);
+  fs.writeFileSync(path.join(repo, "README.md"), "hello\n");
+  run("git", ["add", "README.md"], { cwd: repo });
+  run("git", ["commit", "-m", "init"], { cwd: repo });
+  return repo;
+}
+
 test("task logs reasoning summaries and assistant messages to the job log", () => {
   const repo = makeTempDir();
   const binDir = makeTempDir();

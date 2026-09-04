@@ -1,6 +1,6 @@
 ---
 name: codex-result-handling
-description: Internal guidance for presenting Codex helper output back to the user
+description: Use whenever Codex output - review findings, task results, or a finished background job - is presented to the user or acted on. Governs what Claude may do next with that output.
 user-invocable: false
 ---
 

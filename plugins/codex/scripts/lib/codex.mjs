@@ -67,6 +67,7 @@ function buildThreadParams(cwd, options = {}) {
     approvalPolicy: options.approvalPolicy ?? "never",
     sandbox: options.sandbox ?? "read-only",
     serviceName: SERVICE_NAME,
+    developerInstructions: options.developerInstructions ?? null,
     ephemeral: options.ephemeral ?? true
   };
 }
@@ -78,7 +79,8 @@ function buildResumeParams(threadId, cwd, options = {}) {
     cwd,
     model: options.model ?? null,
     approvalPolicy: options.approvalPolicy ?? "never",
-    sandbox: options.sandbox ?? "read-only"
+    sandbox: options.sandbox ?? "read-only",
+    developerInstructions: options.developerInstructions ?? null
   };
 }
 
@@ -1009,6 +1011,7 @@ export async function runAppServerReview(cwd, options = {}) {
     emitProgress(options.onProgress, "Starting Codex review thread.", "starting");
     const thread = await startThread(client, cwd, {
       model: options.model,
+      developerInstructions: options.developerInstructions,
       sandbox: "read-only",
       ephemeral: true,
       threadName: options.threadName
@@ -1105,6 +1108,7 @@ export async function runAppServerTurn(cwd, options = {}) {
       emitProgress(options.onProgress, `Resuming thread ${options.resumeThreadId}.`, "starting");
       const response = await resumeThread(client, options.resumeThreadId, cwd, {
         model: options.model,
+        developerInstructions: options.developerInstructions,
         sandbox: options.sandbox,
         ephemeral: false
       });
@@ -1113,6 +1117,7 @@ export async function runAppServerTurn(cwd, options = {}) {
       emitProgress(options.onProgress, "Starting Codex task thread.", "starting");
       const response = await startThread(client, cwd, {
         model: options.model,
+        developerInstructions: options.developerInstructions,
         sandbox: options.sandbox,
         ephemeral: options.persistThread ? false : true,
         threadName: options.persistThread ? options.threadName : options.threadName ?? null

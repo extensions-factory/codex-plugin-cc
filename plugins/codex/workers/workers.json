@@ -1,0 +1,20 @@
+{
+  "defaults": {
+    "task": "implementer",
+    "review": "reviewer"
+  },
+  "workers": {
+    "implementer": {
+      "model": "cx/gpt-5.6-terra",
+      "effort": "medium",
+      "description": "Writes and changes code: features, bug fixes, refactors, and follow-up investigation.",
+      "instructionsFile": "implementer.md"
+    },
+    "reviewer": {
+      "model": "cx/gpt-5.6-sol-review",
+      "effort": "high",
+      "description": "Reads code without changing it: reviews, audits, adversarial critique, root-cause analysis.",
+      "instructionsFile": "reviewer.md"
+    }
+  }
+}

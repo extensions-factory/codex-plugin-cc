@@ -158,7 +158,8 @@ Ask Codex to redesign the database connection to be more resilient.
 
 **Notes:**
 
-- if you do not pass `--model` or `--effort`, Codex chooses its own defaults.
+- every Codex run uses a worker: a named profile that supplies the model, the reasoning effort, and the instructions Codex runs under. `node "${CLAUDE_PLUGIN_ROOT}/scripts/codex-companion.mjs" workers` lists them.
+- if you do not pass `--worker`, the default worker applies. `--model` and `--effort` override that worker's values for a single run.
 - if you say `spark`, the plugin maps that to `gpt-5.3-codex-spark`
 - follow-up rescue requests can continue the latest Codex task in the repo
 

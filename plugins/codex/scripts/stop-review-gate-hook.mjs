@@ -12,6 +12,7 @@ import { getConfig, listJobs } from "./lib/state.mjs";
 import { sortJobsNewestFirst } from "./lib/job-control.mjs";
 import { SESSION_ID_ENV } from "./lib/tracked-jobs.mjs";
 import { resolveWorkspaceRoot } from "./lib/workspace.mjs";
+import { loadRoster } from "./lib/workers.mjs";
 
 const STOP_REVIEW_TIMEOUT_MS = 15 * 60 * 1000;
 const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
@@ -98,11 +99,20 @@ function parseStopReviewOutput(rawOutput) {
 function runStopReview(cwd, input = {}) {
   const scriptPath = path.join(SCRIPT_DIR, "codex-companion.mjs");
   const prompt = buildStopReviewPrompt(input);
+  let reviewWorker;
+  try {
+    reviewWorker = loadRoster().defaults.review;
+  } catch (error) {
+    return {
+      ok: false,
+      reason: `The stop-time Codex review could not resolve its worker: ${error instanceof Error ? error.message : error}`
+    };
+  }
   const childEnv = {
     ...process.env,
     ...(input.session_id ? { [SESSION_ID_ENV]: input.session_id } : {})
   };
-  const result = spawnSync(process.execPath, [scriptPath, "task", "--json", prompt], {
+  const result = spawnSync(process.execPath, [scriptPath, "task", "--worker", reviewWorker, "--json", prompt], {
     cwd,
     env: childEnv,
     encoding: "utf8",

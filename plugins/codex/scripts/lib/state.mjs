@@ -127,20 +127,22 @@ export function generateJobId(prefix = "job") {
 }
 
 export function upsertJob(cwd, jobPatch) {
+  // The task request (prompt, instructions) lives in the per-job file; keep it out of the shared index.
+  const { request: _request, ...patch } = jobPatch;
   return updateState(cwd, (state) => {
     const timestamp = nowIso();
-    const existingIndex = state.jobs.findIndex((job) => job.id === jobPatch.id);
+    const existingIndex = state.jobs.findIndex((job) => job.id === patch.id);
     if (existingIndex === -1) {
       state.jobs.unshift({
         createdAt: timestamp,
         updatedAt: timestamp,
-        ...jobPatch
+        ...patch
       });
       return;
     }
     state.jobs[existingIndex] = {
       ...state.jobs[existingIndex],
-      ...jobPatch,
+      ...patch,
       updatedAt: timestamp
     };
   });

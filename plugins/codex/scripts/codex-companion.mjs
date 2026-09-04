@@ -53,6 +53,7 @@ import {
   SESSION_ID_ENV
 } from "./lib/tracked-jobs.mjs";
 import { resolveWorkspaceRoot } from "./lib/workspace.mjs";
+import { listWorkers, loadRoster, resolveWorker } from "./lib/workers.mjs";
 import {
   renderNativeReviewResult,
   renderReviewResult,
@@ -77,9 +78,10 @@ function printUsage() {
     [
       "Usage:",
       "  node scripts/codex-companion.mjs setup [--enable-review-gate|--disable-review-gate] [--json]",
-      "  node scripts/codex-companion.mjs review [--wait|--background] [--base <ref>] [--scope <auto|working-tree|branch>]",
-      "  node scripts/codex-companion.mjs adversarial-review [--wait|--background] [--base <ref>] [--scope <auto|working-tree|branch>] [focus text]",
-      "  node scripts/codex-companion.mjs task [--background] [--write] [--resume-last|--resume|--fresh] [--model <model|spark>] [--effort <none|minimal|low|medium|high|xhigh>] [prompt]",
+      "  node scripts/codex-companion.mjs workers [--json]",
+      "  node scripts/codex-companion.mjs review [--wait|--background] [--worker <name>] [--base <ref>] [--scope <auto|working-tree|branch>]",
+      "  node scripts/codex-companion.mjs adversarial-review [--wait|--background] [--worker <name>] [--base <ref>] [--scope <auto|working-tree|branch>] [focus text]",
+      "  node scripts/codex-companion.mjs task [--background] [--write] [--resume-last|--resume|--fresh] [--worker <name>] [--model <model|spark>] [--effort <none|minimal|low|medium|high|xhigh>] [prompt]",
       "  node scripts/codex-companion.mjs transfer [--source <claude-jsonl>] [--json]",
       "  node scripts/codex-companion.mjs status [job-id] [--all] [--json]",
       "  node scripts/codex-companion.mjs result [job-id] [--json]",
@@ -109,6 +111,20 @@ function normalizeRequestedModel(model) {
     return null;
   }
   return MODEL_ALIASES.get(normalized.toLowerCase()) ?? normalized;
+}
+
+/**
+ * Resolves the worker profile a run should use.
+ * `--worker` picks the profile; `--model` and `--effort` override its values.
+ */
+function resolveWorkerForCommand(options, kind) {
+  const worker = resolveWorker({
+    kind,
+    worker: options.worker,
+    model: normalizeRequestedModel(options.model),
+    effort: options.effort
+  });
+  return { ...worker, effort: normalizeReasoningEffort(worker.effort) };
 }
 
 function normalizeReasoningEffort(effort) {
@@ -370,6 +386,7 @@ async function executeReviewRun(request) {
     const result = await runAppServerReview(request.cwd, {
       target: reviewTarget,
       model: request.model,
+      developerInstructions: request.developerInstructions,
       onProgress: request.onProgress
     });
     const payload = {
@@ -411,6 +428,8 @@ async function executeReviewRun(request) {
   const result = await runAppServerTurn(context.repoRoot, {
     prompt,
     model: request.model,
+    effort: request.effort,
+    developerInstructions: request.developerInstructions,
     sandbox: "read-only",
     outputSchema: readOutputSchema(REVIEW_SCHEMA),
     onProgress: request.onProgress
@@ -488,6 +507,7 @@ async function executeTaskRun(request) {
     defaultPrompt: resumeThreadId ? DEFAULT_CONTINUE_PROMPT : "",
     model: request.model,
     effort: request.effort,
+    developerInstructions: request.developerInstructions,
     sandbox: request.write ? "workspace-write" : "read-only",
     onProgress: request.onProgress,
     persistThread: true,
@@ -601,11 +621,12 @@ function buildTaskJob(workspaceRoot, taskMetadata, write) {
   });
 }
 
-function buildTaskRequest({ cwd, model, effort, prompt, write, resumeLast, jobId }) {
+function buildTaskRequest({ cwd, model, effort, developerInstructions, prompt, write, resumeLast, jobId }) {
   return {
     cwd,
     model,
     effort,
+    developerInstructions,
     prompt,
     write,
     resumeLast,
@@ -711,7 +732,7 @@ function enqueueBackgroundTask(cwd, job, request) {
 
 async function handleReviewCommand(argv, config) {
   const { options, positionals } = parseCommandInput(argv, {
-    valueOptions: ["base", "scope", "model", "cwd"],
+    valueOptions: ["base", "scope", "model", "effort", "worker", "cwd"],
     booleanOptions: ["json", "background", "wait"],
     aliasMap: {
       m: "model"
@@ -720,6 +741,7 @@ async function handleReviewCommand(argv, config) {
 
   const cwd = resolveCommandCwd(options);
   const workspaceRoot = resolveCommandWorkspace(options);
+  const worker = resolveWorkerForCommand(options, "review");
   const focusText = positionals.join(" ").trim();
   const target = resolveReviewTarget(cwd, {
     base: options.base,
@@ -743,7 +765,9 @@ async function handleReviewCommand(argv, config) {
         cwd,
         base: options.base,
         scope: options.scope,
-        model: options.model,
+        model: worker.model,
+        effort: worker.effort,
+        developerInstructions: worker.developerInstructions,
         focusText,
         reviewName: config.reviewName,
         onProgress: progress
@@ -761,7 +785,7 @@ async function handleReview(argv) {
 
 async function handleTask(argv) {
   const { options, positionals } = parseCommandInput(argv, {
-    valueOptions: ["model", "effort", "cwd", "prompt-file"],
+    valueOptions: ["model", "effort", "worker", "cwd", "prompt-file"],
     booleanOptions: ["json", "write", "resume-last", "resume", "fresh", "background"],
     aliasMap: {
       m: "model"
@@ -770,8 +794,6 @@ async function handleTask(argv) {
 
   const cwd = resolveCommandCwd(options);
   const workspaceRoot = resolveCommandWorkspace(options);
-  const model = normalizeRequestedModel(options.model);
-  const effort = normalizeReasoningEffort(options.effort);
   const prompt = readTaskPrompt(cwd, options, positionals);
 
   const resumeLast = Boolean(options["resume-last"] || options.resume);
@@ -779,6 +801,16 @@ async function handleTask(argv) {
   if (resumeLast && fresh) {
     throw new Error("Choose either --resume/--resume-last or --fresh.");
   }
+  // A resumed thread keeps the worker it started with unless --worker is passed
+  // explicitly; only explicit --model/--effort override it.
+  const { model, effort, developerInstructions } =
+    resumeLast && !options.worker
+      ? {
+          model: normalizeRequestedModel(options.model),
+          effort: normalizeReasoningEffort(options.effort),
+          developerInstructions: null
+        }
+      : resolveWorkerForCommand(options, "task");
   const write = Boolean(options.write);
   const taskMetadata = buildTaskRunMetadata({
     prompt,
@@ -794,6 +826,7 @@ async function handleTask(argv) {
       cwd,
       model,
       effort,
+      developerInstructions,
       prompt,
       write,
       resumeLast,
@@ -812,6 +845,7 @@ async function handleTask(argv) {
         cwd,
         model,
         effort,
+        developerInstructions,
         prompt,
         write,
         resumeLast,
@@ -820,6 +854,29 @@ async function handleTask(argv) {
       }),
     { json: options.json }
   );
+}
+
+function renderWorkerRoster(payload) {
+  const lines = ["Codex workers:"];
+  for (const worker of payload.workers) {
+    const defaultFor = worker.defaultFor.length ? ` (default for ${worker.defaultFor.join(", ")})` : "";
+    lines.push(`  ${worker.name}${defaultFor} [${worker.model}]`);
+    if (worker.description) {
+      lines.push(`      ${worker.description}`);
+    }
+  }
+  lines.push("");
+  lines.push("Pick one with --worker <name>.");
+  return `${lines.join("\n")}\n`;
+}
+
+function handleWorkers(argv) {
+  const { options } = parseCommandInput(argv, {
+    booleanOptions: ["json"]
+  });
+
+  const payload = { workers: listWorkers(loadRoster()) };
+  outputCommandResult(payload, renderWorkerRoster(payload), options.json);
 }
 
 async function handleTransfer(argv) {
@@ -1031,6 +1088,9 @@ async function main() {
   switch (subcommand) {
     case "setup":
       await handleSetup(argv);
+      break;
+    case "workers":
+      handleWorkers(argv);
       break;
     case "review":
       await handleReview(argv);
