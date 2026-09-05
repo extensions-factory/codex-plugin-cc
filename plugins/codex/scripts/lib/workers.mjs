@@ -147,3 +147,41 @@ export function resolveWorker(request = {}, roster = loadRoster()) {
     fallbackWorker
   };
 }
+
+// Claude reaches the roster through a `--worker` flag it has to know exists. Left to
+// the agent description alone it defaults to one worker and the other ten stay unused,
+// so the hooks inject the roster instead of waiting to be asked for it.
+const DELEGATION_COMMAND = "/codex:rescue --worker <name>";
+
+/**
+ * Full roster table, injected once per session by the SessionStart hook.
+ *
+ * @param {ReturnType<typeof loadRoster>} [roster]
+ * @returns {string}
+ */
+export function formatRosterHint(roster = loadRoster()) {
+  const lines = listWorkers(roster).map((worker) => {
+    const defaultFor = worker.defaultFor.length > 0 ? ` (default for ${worker.defaultFor.join(", ")})` : "";
+    return `  ${worker.name}${defaultFor} — ${worker.description}`;
+  });
+
+  return [
+    `Codex worker roster — delegate with \`${DELEGATION_COMMAND} <task>\`, or through the codex-rescue subagent:`,
+    ...lines,
+    "Pick the worker whose role matches the task instead of accepting the default.",
+    "Do not delegate work the main thread finishes quickly; delegation is for substantial or second-opinion work."
+  ].join("\n");
+}
+
+/**
+ * One-line reminder, injected per prompt by the UserPromptSubmit hook. The full table
+ * from SessionStart drifts out of reach in a long session; the names alone are enough
+ * to pick from and cheap enough to repeat.
+ *
+ * @param {ReturnType<typeof loadRoster>} [roster]
+ * @returns {string}
+ */
+export function formatRosterReminder(roster = loadRoster()) {
+  const names = listWorkers(roster).map((worker) => worker.name);
+  return `Codex workers available (\`${DELEGATION_COMMAND}\`): ${names.join(", ")}.`;
+}

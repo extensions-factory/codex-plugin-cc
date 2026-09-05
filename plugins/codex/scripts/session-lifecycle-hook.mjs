@@ -15,6 +15,7 @@ import {
 } from "./lib/broker-lifecycle.mjs";
 import { loadState, resolveStateFile, saveState } from "./lib/state.mjs";
 import { TRANSCRIPT_PATH_ENV } from "./lib/claude-session-transfer.mjs";
+import { formatRosterHint } from "./lib/workers.mjs";
 import { resolveWorkspaceRoot } from "./lib/workspace.mjs";
 
 export const SESSION_ID_ENV = "CODEX_COMPANION_SESSION_ID";
@@ -78,6 +79,18 @@ function handleSessionStart(input) {
   appendEnvVar(SESSION_ID_ENV, input.session_id);
   appendEnvVar(TRANSCRIPT_PATH_ENV, input.transcript_path);
   appendEnvVar(PLUGIN_DATA_ENV, process.env[PLUGIN_DATA_ENV]);
+
+  // SessionStart stdout is added to Claude's context as plain text, which is the only
+  // path the roster has to the main thread. A broken roster must not take the session
+  // down with it, so a failure here costs the hint and nothing else.
+  try {
+    const hint = formatRosterHint();
+    if (hint) {
+      process.stdout.write(`${hint}\n`);
+    }
+  } catch {
+    // Leave the session unannotated rather than failing startup.
+  }
 }
 
 async function handleSessionEnd(input) {

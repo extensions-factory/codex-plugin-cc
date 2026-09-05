@@ -4,7 +4,14 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import { makeTempDir } from "./helpers.mjs";
-import { listWorkers, loadRoster, resolveWorker, WORKERS_DIR } from "../plugins/codex/scripts/lib/workers.mjs";
+import {
+  formatRosterHint,
+  formatRosterReminder,
+  listWorkers,
+  loadRoster,
+  resolveWorker,
+  WORKERS_DIR
+} from "../plugins/codex/scripts/lib/workers.mjs";
 
 function writeRoster(roster, files = {}) {
   const dir = makeTempDir("codex-workers-");
@@ -183,4 +190,30 @@ test("an unknown fallback worker is rejected", () => {
   const roster = loadRoster(dir);
 
   assert.throws(() => resolveWorker({}, roster), /unknown fallbackWorker "ghost"/);
+});
+
+test("the roster hint names every worker, its role, and the delegation command", () => {
+  const roster = loadRoster();
+  const hint = formatRosterHint(roster);
+
+  for (const worker of listWorkers(roster)) {
+    assert.match(hint, new RegExp(`\\b${worker.name}\\b`), `hint is missing ${worker.name}`);
+    assert.ok(hint.includes(worker.description), `hint is missing the description for ${worker.name}`);
+  }
+
+  assert.match(hint, /--worker <name>/);
+  assert.match(hint, /\(default for task\)/);
+  assert.match(hint, /\(default for review\)/);
+  assert.match(hint, /Do not delegate work the main thread finishes quickly/);
+});
+
+test("the roster reminder lists every worker name on one line", () => {
+  const roster = loadRoster();
+  const reminder = formatRosterReminder(roster);
+
+  assert.equal(reminder.split("\n").length, 1);
+  for (const worker of listWorkers(roster)) {
+    assert.match(reminder, new RegExp(`\\b${worker.name}\\b`), `reminder is missing ${worker.name}`);
+  }
+  assert.match(reminder, /--worker <name>/);
 });

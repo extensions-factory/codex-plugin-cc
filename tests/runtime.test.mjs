@@ -15,6 +15,7 @@ const PLUGIN_ROOT = path.join(ROOT, "plugins", "codex");
 const SCRIPT = path.join(PLUGIN_ROOT, "scripts", "codex-companion.mjs");
 const STOP_HOOK = path.join(PLUGIN_ROOT, "scripts", "stop-review-gate-hook.mjs");
 const SESSION_HOOK = path.join(PLUGIN_ROOT, "scripts", "session-lifecycle-hook.mjs");
+const ROUTING_HOOK = path.join(PLUGIN_ROOT, "scripts", "worker-routing-hook.mjs");
 
 async function waitFor(predicate, { timeoutMs = 5000, intervalMs = 50 } = {}) {
   const start = Date.now();
@@ -2561,4 +2562,44 @@ test("an explicit --model drops the worker's fallback", () => {
   const fakeState = JSON.parse(fs.readFileSync(statePath, "utf8"));
   assert.equal(fakeState.usageLimitAttempts, 1);
   assert.equal(fakeState.lastThreadStart.model, "cx/override");
+});
+
+test("the session start hook prints the worker roster into Claude's context", () => {
+  const repo = makeTempDir();
+  const envFile = path.join(makeTempDir(), "claude-env.sh");
+  fs.writeFileSync(envFile, "", "utf8");
+
+  const result = run("node", [SESSION_HOOK, "SessionStart"], {
+    cwd: repo,
+    env: { ...process.env, CLAUDE_ENV_FILE: envFile },
+    input: JSON.stringify({ hook_event_name: "SessionStart", session_id: "sess-roster", cwd: repo })
+  });
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /Codex worker roster/);
+  assert.match(result.stdout, /implementer \(default for task\)/);
+  assert.match(result.stdout, /--worker <name>/);
+});
+
+test("the prompt hook returns the roster reminder as UserPromptSubmit additionalContext", () => {
+  const repo = makeTempDir();
+
+  const result = run("node", [ROUTING_HOOK], {
+    cwd: repo,
+    input: JSON.stringify({ hook_event_name: "UserPromptSubmit", prompt: "fix the failing test", cwd: repo })
+  });
+
+  assert.equal(result.status, 0, result.stderr);
+  const payload = JSON.parse(result.stdout);
+  // additionalContext is only honoured nested inside hookSpecificOutput.
+  assert.equal(payload.hookSpecificOutput.hookEventName, "UserPromptSubmit");
+  assert.match(payload.hookSpecificOutput.additionalContext, /Codex workers available/);
+  assert.match(payload.hookSpecificOutput.additionalContext, /debugger/);
+});
+
+test("the prompt hook stays silent instead of failing a prompt on bad input", () => {
+  const result = run("node", [ROUTING_HOOK], { cwd: makeTempDir(), input: "not json" });
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(result.stdout.trim(), "");
 });

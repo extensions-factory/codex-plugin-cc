@@ -42,7 +42,7 @@ State lives **outside the repo**, in `$CLAUDE_PLUGIN_DATA/state/<slug>-<sha256-1
 
 ### Hooks
 
-`plugins/codex/hooks/hooks.json` registers three: `SessionStart` and `SessionEnd` (`session-lifecycle-hook.mjs` — exports session id / transcript path / plugin data dir into `CLAUDE_ENV_FILE`, tears down the broker, prunes jobs) and an **opt-in** `Stop` gate (`stop-review-gate-hook.mjs`, toggled by `/codex:setup --enable-review-gate`) that runs a Codex review of the last turn and blocks the stop on a `BLOCK:` first line.
+`plugins/codex/hooks/hooks.json` registers four: `SessionStart` and `SessionEnd` (`session-lifecycle-hook.mjs` — exports session id / transcript path / plugin data dir into `CLAUDE_ENV_FILE`, tears down the broker, prunes jobs) and an **opt-in** `Stop` gate (`stop-review-gate-hook.mjs`, toggled by `/codex:setup --enable-review-gate`) that runs a Codex review of the last turn and blocks the stop on a `BLOCK:` first line. A `UserPromptSubmit` hook (`worker-routing-hook.mjs`) injects a one-line roster reminder through `hookSpecificOutput.additionalContext`, and `SessionStart` prints the full roster table to stdout; both come from `formatRosterHint`/`formatRosterReminder` in `lib/workers.mjs`, so the roster is never duplicated in prose. Hooks cannot force a tool call or a subagent invocation — these only put the worker names in front of Claude, they do not compel delegation.
 
 ### Safety invariants in the app-server payloads
 

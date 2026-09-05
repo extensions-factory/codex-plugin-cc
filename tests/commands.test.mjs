@@ -211,6 +211,8 @@ test("hooks keep session-end cleanup and stop gating enabled", () => {
   assert.match(source, /SessionEnd/);
   assert.match(source, /stop-review-gate-hook\.mjs/);
   assert.match(source, /session-lifecycle-hook\.mjs/);
+  assert.match(source, /UserPromptSubmit/);
+  assert.match(source, /worker-routing-hook\.mjs/);
 });
 
 test("setup command can offer Codex install and explains provider readiness", () => {
