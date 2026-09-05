@@ -754,6 +754,28 @@ async function resumeThread(client, threadId, cwd, options = {}) {
   return client.request("thread/resume", buildResumeParams(threadId, cwd, options));
 }
 
+// The app-server reports an exhausted plan or budget through `codexErrorInfo`
+// (see CodexErrorInfo in the generated types). Older or proxied servers may only
+// send the human-readable message, so that is matched as a fallback.
+const USAGE_LIMIT_INFO = new Set(["usageLimitExceeded", "sessionBudgetExceeded"]);
+const USAGE_LIMIT_MESSAGE = /usage limit|usage[_-]?limit[_-]?(reached|exceeded)/i;
+
+/**
+ * True when a turn failed for lack of quota rather than for being wrong. Such a run
+ * is worth one attempt on another model; no other failure is.
+ * @param {{ message?: string, codexErrorInfo?: unknown } | null | undefined} error
+ *   the `error` field of a turn result
+ */
+export function isUsageLimitError(error) {
+  if (!error || typeof error !== "object") {
+    return false;
+  }
+  if (typeof error.codexErrorInfo === "string" && USAGE_LIMIT_INFO.has(error.codexErrorInfo)) {
+    return true;
+  }
+  return typeof error.message === "string" && USAGE_LIMIT_MESSAGE.test(error.message);
+}
+
 function buildResultStatus(turnState) {
   return turnState.finalTurn?.status === "completed" ? 0 : 1;
 }

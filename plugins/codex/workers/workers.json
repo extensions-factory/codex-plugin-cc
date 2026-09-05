@@ -4,17 +4,72 @@
     "review": "reviewer"
   },
   "workers": {
-    "implementer": {
-      "model": "cx/gpt-5.6-terra",
+    "analyst": {
+      "model": "cx/gpt-5.6-terra-review",
+      "effort": "high",
+      "description": "Turns a request into acceptance criteria, edge cases, and an explicit out-of-scope list. Reads only.",
+      "instructionsFile": "analyst.md"
+    },
+    "architect": {
+      "model": "cx/gpt-5.6-sol-review",
+      "effort": "xhigh",
+      "description": "Weighs design options against the codebase's real constraints and recommends one. Reads only.",
+      "instructionsFile": "architect.md"
+    },
+    "explorer": {
+      "model": "ag/gemini-3.8-flash-high",
       "effort": "medium",
-      "description": "Writes and changes code: features, bug fixes, refactors, and follow-up investigation.",
+      "description": "Maps unfamiliar code: locates definitions, traces flows, reports file:line. Reads only, 1M context.",
+      "instructionsFile": "explorer.md"
+    },
+    "implementer": {
+      "model": "ag/claude-sonnet-4-6",
+      "effort": "high",
+      "description": "Writes and changes code: features, bug fixes, follow-up investigation.",
+      "instructionsFile": "implementer.md",
+      "fallbackWorker": "implementer-cx"
+    },
+    "implementer-cx": {
+      "model": "cx/gpt-5.6-terra",
+      "effort": "high",
+      "description": "Same role as implementer on a different provider. Used when implementer hits its usage limit.",
       "instructionsFile": "implementer.md"
     },
-    "reviewer": {
-      "model": "cx/gpt-5.6-sol-review",
+    "tester": {
+      "model": "cx/gpt-5.6-terra",
       "effort": "high",
-      "description": "Reads code without changing it: reviews, audits, adversarial critique, root-cause analysis.",
+      "description": "Writes tests: reproduces a bug as a failing test, covers edge cases, leaves the suite runnable.",
+      "instructionsFile": "tester.md"
+    },
+    "debugger": {
+      "model": "cx/gpt-5.6-sol",
+      "effort": "xhigh",
+      "description": "Takes a symptom to its root cause with evidence, then fixes that cause.",
+      "instructionsFile": "debugger.md"
+    },
+    "refactorer": {
+      "model": "cx/gpt-5.6-terra",
+      "effort": "high",
+      "description": "Restructures code without changing behavior: dead code, duplication, unclear boundaries.",
+      "instructionsFile": "refactorer.md"
+    },
+    "reviewer": {
+      "model": "cx/gpt-5.6-terra-review",
+      "effort": "high",
+      "description": "Reviews a change for defects and ranks them by consequence. Reads only.",
       "instructionsFile": "reviewer.md"
+    },
+    "auditor": {
+      "model": "cx/gpt-5.6-sol-review",
+      "effort": "xhigh",
+      "description": "Adversarial and security review: attacks the change looking for exploitable or destructive failure. Reads only.",
+      "instructionsFile": "auditor.md"
+    },
+    "scribe": {
+      "model": "cx/gpt-5.6-luna",
+      "effort": "medium",
+      "description": "Writes documentation from the code as it actually behaves: READMEs, docstrings, changelog entries.",
+      "instructionsFile": "scribe.md"
     }
   }
 }

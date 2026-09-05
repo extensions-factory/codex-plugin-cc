@@ -598,6 +598,47 @@ rl.on("line", (line) => {
           }
         ];
 
+	        if (BEHAVIOR.startsWith("usage-limit")) {
+	          const attempts = (state.usageLimitAttempts || 0) + 1;
+	          state.usageLimitAttempts = attempts;
+	          saveState(state);
+	          if (BEHAVIOR !== "usage-limit-then-ok" || attempts === 1) {
+	            send({ method: "turn/started", params: { threadId: thread.id, turn: buildTurn(turnId) } });
+	            if (BEHAVIOR === "usage-limit-dirty") {
+	              send({
+	                method: "item/completed",
+	                params: {
+	                  threadId: thread.id,
+	                  turnId,
+	                  item: {
+	                    type: "fileChange",
+	                    id: "fc_" + turnId,
+	                    status: "completed",
+	                    changes: [{ path: "src/touched.js", kind: "update" }]
+	                  }
+	                }
+	              });
+	            }
+	            send({
+	              method: "error",
+	              params: {
+	                threadId: thread.id,
+	                turnId,
+	                willRetry: false,
+	                error: {
+	                  message: "You've hit your usage limit for gpt-5.6. Try again later.",
+	                  codexErrorInfo: "usageLimitExceeded",
+	                  additionalDetails: null
+	                }
+	              }
+	            });
+	            send({ method: "turn/completed", params: { threadId: thread.id, turn: buildTurn(turnId, "failed") } });
+	            break;
+	          }
+	          emitTurnCompleted(thread.id, turnId, items);
+	          break;
+	        }
+
 	        if (BEHAVIOR === "interruptible-slow-task") {
 	          send({ method: "turn/started", params: { threadId: thread.id, turn: buildTurn(turnId) } });
 	          const timer = setTimeout(() => {

@@ -46,7 +46,7 @@ State lives **outside the repo**, in `$CLAUDE_PLUGIN_DATA/state/<slug>-<sha256-1
 
 ### Safety invariants in the app-server payloads
 
-`approvalPolicy` is always `never`. Sandbox is `read-only` except `task --write`, which uses `workspace-write`; `danger-full-access` is never exposed. Raw `config`, `baseInstructions`, and `approvalsReviewer` are deliberately not reachable from a slash command — surfacing any of them is a policy change, not a new option. `developerInstructions` is populated only from the worker roster shipped in `plugins/codex/workers/` (`--worker <name>` picks a profile, `workers.json` `defaults` picks one per kind); free-text instructions are never accepted from a command. `plugins/codex/ARCHITECT.md` (Vietnamese) documents the full current-vs-available payload matrix.
+`approvalPolicy` is always `never`. Sandbox is `read-only` except `task --write`, which uses `workspace-write`; `danger-full-access` is never exposed. Raw `config`, `baseInstructions`, and `approvalsReviewer` are deliberately not reachable from a slash command — surfacing any of them is a policy change, not a new option. `developerInstructions` is populated only from the worker roster shipped in `plugins/codex/workers/` (`--worker <name>` picks a profile, `workers.json` `defaults` picks one per kind); free-text instructions are never accepted from a command. A profile may name a `fallbackWorker`; `executeTaskRun` retries on it once when a turn fails with `codexErrorInfo: "usageLimitExceeded"` (or `sessionBudgetExceeded`) **and** touched no files — never on a dirty tree, and never when `--model` was passed. `plugins/codex/ARCHITECT.md` (Vietnamese) documents the full current-vs-available payload matrix.
 
 ## Testing
 

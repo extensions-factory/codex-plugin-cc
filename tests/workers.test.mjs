@@ -131,3 +131,56 @@ test("the shipped roster resolves every worker it declares", () => {
     assert.ok(worker.description.length > 0, `${worker.name} has a description`);
   }
 });
+
+test("resolveWorker reports a profile's fallback worker", () => {
+  const dir = writeRoster(
+    {
+      defaults: { task: "implementer", review: "reviewer" },
+      workers: {
+        implementer: { model: "cx/primary", instructionsFile: "implementer.md", fallbackWorker: "backup" },
+        backup: { model: "cx/backup", instructionsFile: "implementer.md" },
+        reviewer: { model: "cx/reviewer", instructionsFile: "implementer.md" }
+      }
+    },
+    { "implementer.md": "Implementer soul.\n" }
+  );
+  const roster = loadRoster(dir);
+
+  assert.equal(resolveWorker({}, roster).fallbackWorker, "backup");
+  assert.equal(resolveWorker({ worker: "backup" }, roster).fallbackWorker, null);
+});
+
+test("an explicit model override drops the fallback worker", () => {
+  const dir = writeRoster(
+    {
+      defaults: { task: "implementer", review: "reviewer" },
+      workers: {
+        implementer: { model: "cx/primary", instructionsFile: "implementer.md", fallbackWorker: "backup" },
+        backup: { model: "cx/backup", instructionsFile: "implementer.md" },
+        reviewer: { model: "cx/reviewer", instructionsFile: "implementer.md" }
+      }
+    },
+    { "implementer.md": "Implementer soul.\n" }
+  );
+  const roster = loadRoster(dir);
+
+  const resolved = resolveWorker({ model: "cx/override" }, roster);
+  assert.equal(resolved.model, "cx/override");
+  assert.equal(resolved.fallbackWorker, null);
+});
+
+test("an unknown fallback worker is rejected", () => {
+  const dir = writeRoster(
+    {
+      defaults: { task: "implementer", review: "reviewer" },
+      workers: {
+        implementer: { model: "cx/primary", instructionsFile: "implementer.md", fallbackWorker: "ghost" },
+        reviewer: { model: "cx/reviewer", instructionsFile: "implementer.md" }
+      }
+    },
+    { "implementer.md": "Implementer soul.\n" }
+  );
+  const roster = loadRoster(dir);
+
+  assert.throws(() => resolveWorker({}, roster), /unknown fallbackWorker "ghost"/);
+});

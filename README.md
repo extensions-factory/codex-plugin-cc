@@ -152,6 +152,7 @@ Ask Codex to redesign the database connection to be more resilient.
 
 - every Codex run uses a worker: a named profile that supplies the model, the reasoning effort, and the instructions Codex runs under. `node "${CLAUDE_PLUGIN_ROOT}/scripts/codex-companion.mjs" workers` lists them.
 - if you do not pass `--worker`, the default worker applies. `--model` and `--effort` override that worker's values for a single run.
+- a worker may name a `fallbackWorker`. When a `task` run fails because the model is out of quota and the run changed no files, it retries once on that worker. A run that had already written files is not retried; the error names the worker to rerun with. An explicit `--model` disables the fallback.
 - a model the configured provider does not serve is rejected before the run starts, and the error lists the models it does serve.
 - `--effort` applies to `task` and `adversarial-review`; the native `review` runs at Codex's default effort.
 - follow-up rescue requests can continue the latest Codex task in the repo

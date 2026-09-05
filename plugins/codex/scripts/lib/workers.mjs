@@ -9,7 +9,8 @@ import { readJsonFile } from "./fs.mjs";
  *   name: string,
  *   model: string,
  *   effort: string | null,
- *   developerInstructions: string
+ *   developerInstructions: string,
+ *   fallbackWorker: string | null
  * }} ResolvedWorker
  */
 
@@ -96,6 +97,8 @@ function readInstructions(roster, name, profile) {
  * Resolves the worker a run should use.
  * `worker` selects a profile, otherwise the roster default for `kind` applies;
  * `model`/`effort` override that profile's values.
+ * `fallbackWorker` is the profile's stand-in for a usage-limited run. An explicit
+ * `model` override drops it: the caller picked that model on purpose.
  * @param {{ worker?: string | null, model?: string | null, effort?: string | null, kind?: "task" | "review" }} [request]
  * @param {ReturnType<typeof loadRoster>} [roster]
  * @returns {ResolvedWorker}
@@ -115,7 +118,8 @@ export function resolveWorker(request = {}, roster = loadRoster()) {
     );
   }
 
-  const model = (typeof request.model === "string" && request.model.trim()) || profile.model;
+  const modelOverride = typeof request.model === "string" && request.model.trim();
+  const model = modelOverride || profile.model;
   if (typeof model !== "string" || !model.trim()) {
     throw new Error(`Worker "${name}" has no model. Set "model" in the roster or pass --model.`);
   }
@@ -125,10 +129,21 @@ export function resolveWorker(request = {}, roster = loadRoster()) {
     (typeof profile.effort === "string" && profile.effort.trim()) ||
     null;
 
+  const fallbackWorker =
+    !modelOverride && typeof profile.fallbackWorker === "string" && profile.fallbackWorker.trim()
+      ? profile.fallbackWorker.trim()
+      : null;
+  if (fallbackWorker && !roster.workers[fallbackWorker]) {
+    throw new Error(
+      `Worker "${name}" names an unknown fallbackWorker "${fallbackWorker}". Available workers: ${Object.keys(roster.workers).sort().join(", ")}.`
+    );
+  }
+
   return {
     name,
     model: model.trim(),
     effort,
-    developerInstructions: readInstructions(roster, name, profile)
+    developerInstructions: readInstructions(roster, name, profile),
+    fallbackWorker
   };
 }

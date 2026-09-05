@@ -2504,3 +2504,61 @@ test("setup and status honor --cwd when reading shared session runtime", () => {
   assert.equal(payload.sessionRuntime.mode, "shared");
   assert.equal(payload.sessionRuntime.endpoint, "unix:/tmp/fake-broker.sock");
 });
+
+test("task retries on the fallback worker when the run hits its usage limit", () => {
+  const repo = prepareRepo();
+  const binDir = makeTempDir();
+  const statePath = path.join(binDir, "fake-codex-state.json");
+  installFakeCodex(binDir, "usage-limit-then-ok");
+
+  const result = run("node", [SCRIPT, "task", "--json", "implement the parser"], {
+    cwd: repo,
+    env: buildEnv(binDir)
+  });
+
+  assert.equal(result.status, 0, result.stderr);
+  const payload = JSON.parse(result.stdout);
+  const roster = JSON.parse(fs.readFileSync(path.join(PLUGIN_ROOT, "workers", "workers.json"), "utf8"));
+  const fallbackName = roster.workers[roster.defaults.task].fallbackWorker;
+
+  assert.equal(payload.fallbackWorker, fallbackName);
+  const fakeState = JSON.parse(fs.readFileSync(statePath, "utf8"));
+  assert.equal(fakeState.lastThreadStart.model, roster.workers[fallbackName].model);
+  assert.equal(fakeState.usageLimitAttempts, 2);
+});
+
+test("task does not retry a usage-limited run that already changed files", () => {
+  const repo = prepareRepo();
+  const binDir = makeTempDir();
+  const statePath = path.join(binDir, "fake-codex-state.json");
+  installFakeCodex(binDir, "usage-limit-dirty");
+
+  const result = run("node", [SCRIPT, "task", "--write", "implement the parser"], {
+    cwd: repo,
+    env: buildEnv(binDir)
+  });
+
+  assert.notEqual(result.status, 0);
+  const output = `${result.stdout}${result.stderr}`;
+  assert.match(output, /usage limit/i);
+  assert.match(output, /--worker implementer-cx/);
+  const fakeState = JSON.parse(fs.readFileSync(statePath, "utf8"));
+  assert.equal(fakeState.usageLimitAttempts, 1);
+});
+
+test("an explicit --model drops the worker's fallback", () => {
+  const repo = prepareRepo();
+  const binDir = makeTempDir();
+  const statePath = path.join(binDir, "fake-codex-state.json");
+  installFakeCodex(binDir, "usage-limit-then-ok");
+
+  const result = run("node", [SCRIPT, "task", "--model", "cx/override", "implement the parser"], {
+    cwd: repo,
+    env: buildEnv(binDir)
+  });
+
+  assert.notEqual(result.status, 0);
+  const fakeState = JSON.parse(fs.readFileSync(statePath, "utf8"));
+  assert.equal(fakeState.usageLimitAttempts, 1);
+  assert.equal(fakeState.lastThreadStart.model, "cx/override");
+});

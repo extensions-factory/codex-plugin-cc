@@ -16,6 +16,7 @@ import {
     getSessionRuntimeStatus,
     importExternalAgentSession,
     interruptAppServerTurn,
+    isUsageLimitError,
     parseStructuredOutput,
     readOutputSchema,
     runAppServerReview,
@@ -499,21 +500,47 @@ async function executeTaskRun(request) {
     throw new Error("Provide a prompt, a prompt file, piped stdin, or use --resume-last.");
   }
 
-  const result = await runAppServerTurn(workspaceRoot, {
-    resumeThreadId,
-    prompt: request.prompt,
-    defaultPrompt: resumeThreadId ? DEFAULT_CONTINUE_PROMPT : "",
-    model: request.model,
-    effort: request.effort,
-    developerInstructions: request.developerInstructions,
-    sandbox: request.write ? "workspace-write" : "read-only",
-    onProgress: request.onProgress,
-    persistThread: true,
-    threadName: resumeThreadId ? null : buildPersistentTaskThreadName(request.prompt || DEFAULT_CONTINUE_PROMPT)
-  });
+  const runTurn = (worker) =>
+    runAppServerTurn(workspaceRoot, {
+      resumeThreadId,
+      prompt: request.prompt,
+      defaultPrompt: resumeThreadId ? DEFAULT_CONTINUE_PROMPT : "",
+      model: worker.model,
+      effort: worker.effort,
+      developerInstructions: worker.developerInstructions,
+      sandbox: request.write ? "workspace-write" : "read-only",
+      onProgress: request.onProgress,
+      persistThread: true,
+      threadName: resumeThreadId ? null : buildPersistentTaskThreadName(request.prompt || DEFAULT_CONTINUE_PROMPT)
+    });
+
+  let result = await runTurn(request);
+  // A usage-limited run failed for lack of quota, not for being wrong, so the same
+  // prompt is worth one attempt on the fallback worker's model. Only when the failed
+  // run wrote nothing: retrying on top of half-applied edits stacks two models on one
+  // unfinished change.
+  let fallbackUsed = null;
+  const usageLimited = result.status !== 0 && isUsageLimitError(result.error);
+  if (usageLimited && request.fallbackWorker && (result.touchedFiles?.length ?? 0) === 0) {
+    const fallback = resolveWorker({ kind: "task", worker: request.fallbackWorker });
+    request.onProgress?.({
+      message: `Codex hit its usage limit. Retrying once on worker ${fallback.name} (${fallback.model}).`,
+      phase: "running"
+    });
+    result = await runTurn({ ...fallback, effort: normalizeReasoningEffort(fallback.effort) });
+    fallbackUsed = fallback.name;
+  }
 
   const rawOutput = typeof result.finalMessage === "string" ? result.finalMessage : "";
-  const failureMessage = result.error?.message ?? result.stderr ?? "";
+  let failureMessage = result.error?.message ?? result.stderr ?? "";
+  if (usageLimited && request.fallbackWorker && !fallbackUsed) {
+    failureMessage = [
+      failureMessage,
+      `The run had already changed files, so it was not retried automatically. Review the working tree, then rerun with --worker ${request.fallbackWorker}.`
+    ]
+      .filter(Boolean)
+      .join("\n");
+  }
   const rendered = renderTaskResult(
     {
       rawOutput,
@@ -531,7 +558,8 @@ async function executeTaskRun(request) {
     threadId: result.threadId,
     rawOutput,
     touchedFiles: result.touchedFiles,
-    reasoningSummary: result.reasoningSummary
+    reasoningSummary: result.reasoningSummary,
+    ...(fallbackUsed ? { fallbackWorker: fallbackUsed } : {})
   };
 
   return {
@@ -619,12 +647,13 @@ function buildTaskJob(workspaceRoot, taskMetadata, write) {
   });
 }
 
-function buildTaskRequest({ cwd, model, effort, developerInstructions, prompt, write, resumeLast, jobId }) {
+function buildTaskRequest({ cwd, model, effort, developerInstructions, fallbackWorker, prompt, write, resumeLast, jobId }) {
   return {
     cwd,
     model,
     effort,
     developerInstructions,
+    fallbackWorker,
     prompt,
     write,
     resumeLast,
@@ -801,12 +830,13 @@ async function handleTask(argv) {
   }
   // A resumed thread keeps the worker it started with unless --worker is passed
   // explicitly; only explicit --model/--effort override it.
-  const { model, effort, developerInstructions } =
+  const { model, effort, developerInstructions, fallbackWorker } =
     resumeLast && !options.worker
       ? {
           model: normalizeRequestedModel(options.model),
           effort: normalizeReasoningEffort(options.effort),
-          developerInstructions: null
+          developerInstructions: null,
+          fallbackWorker: null
         }
       : resolveWorkerForCommand(options, "task");
   const write = Boolean(options.write);
@@ -825,6 +855,7 @@ async function handleTask(argv) {
       model,
       effort,
       developerInstructions,
+      fallbackWorker,
       prompt,
       write,
       resumeLast,
@@ -844,6 +875,7 @@ async function handleTask(argv) {
         model,
         effort,
         developerInstructions,
+        fallbackWorker,
         prompt,
         write,
         resumeLast,
